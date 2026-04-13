@@ -146,7 +146,7 @@ canvas{display:block;position:fixed;top:0;left:0;}
 @keyframes invPop{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
 
 /* ── LEADERBOARD ── */
-#lb-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 30%,rgba(20,12,2,.97),rgba(2,1,0,.995));z-index:300;display:none;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;padding:24px 22px 100px;animation:lbReveal 0.4s ease-out;}
+#lb-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 30%,rgba(20,12,2,.97),rgba(2,1,0,.995));z-index:300;display:none;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;padding:24px 22px 32px;animation:lbReveal 0.4s ease-out;}
 @keyframes lbReveal{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 #lb-overlay::before{content:'';position:absolute;top:8px;left:8px;right:8px;bottom:8px;border:1px solid rgba(168,112,30,.35);border-radius:11px;pointer-events:none;}
 #lb-title{font-size:26px;font-weight:900;color:var(--gold);letter-spacing:5px;text-shadow:0 0 36px rgba(224,168,32,.72);margin-bottom:4px;z-index:1;}
@@ -167,8 +167,8 @@ canvas{display:block;position:fixed;top:0;left:0;}
 .lb-name-col{flex:1;font-size:13px;color:#c89838;font-weight:700;}
 .lb-score-col{font-size:13px;font-weight:900;color:#d09820;text-shadow:0 0 8px rgba(200,140,20,.5);}
 .lb-lvl{font-size:10px;color:#6a4e1a;margin-left:8px;}
-#lb-play{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);padding:14px 44px;background:linear-gradient(180deg,#4a2c08,#281602);border:1px solid rgba(168,118,28,.72);border-radius:8px;color:#ecd658;font-size:16px;font-family:'Noto Sans Georgian',sans-serif;font-weight:700;letter-spacing:2px;cursor:pointer;z-index:301;box-shadow:0 0 28px rgba(0,0,0,.92);display:none;transition:all 0.15s;}
-#lb-play:active{transform:scale(.93)translateX(-50%);}
+#lb-play{padding:14px 44px;background:linear-gradient(180deg,#4a2c08,#281602);border:1px solid rgba(168,118,28,.72);border-radius:8px;color:#ecd658;font-size:16px;font-family:'Noto Sans Georgian',sans-serif;font-weight:700;letter-spacing:2px;cursor:pointer;z-index:1;box-shadow:0 0 28px rgba(0,0,0,.92);display:none;transition:all 0.15s;white-space:nowrap;margin-top:8px;margin-bottom:24px;}
+#lb-play:active{transform:scale(.93);}
 
 </style>
 </head>
@@ -2209,7 +2209,18 @@ let _pendingScore = 0, _pendingLevel = 0, _pendingWin = false;
 
 // ── local cache ──
 function lcLoad(){
-  try{ return JSON.parse(localStorage.getItem(LB_KEY)||'[]'); }catch(e){ return []; }
+  try{
+    const raw = JSON.parse(localStorage.getItem(LB_KEY)||'[]');
+    if(!Array.isArray(raw)) return [];
+    // Filter broken/zero entries
+    const valid = raw.filter(r => r && r.name && typeof r.score === 'number' && r.score > 0);
+    // Deduplicate: keep best score per name (handles old cache bloat)
+    const best = {};
+    valid.forEach(r => {
+      if(!best[r.name] || r.score > best[r.name].score) best[r.name] = r;
+    });
+    return Object.values(best).sort((a,b) => b.score - a.score);
+  }catch(e){ return []; }
 }
 function lcSave(rows){
   try{ localStorage.setItem(LB_KEY, JSON.stringify(rows.slice(0,100))); }catch(e){}
@@ -2218,27 +2229,25 @@ function lcSave(rows){
 // ── fetch top scores from Firebase ──
 async function lbFetch(){
   try{
-    const res = await fetch(LB_PATH + '.json', {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
-      headers: {'Accept': 'application/json'}
-    });
+    // Simple fetch — no custom headers to avoid CORS preflight blocking
+    const res = await fetch(LB_PATH + '.json?orderBy="score"&limitToLast=100');
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if(!data) return lcLoad();
-    const rows = Object.values(data).filter(x => x && x.name && typeof x.score === 'number');
+    if(!data || typeof data !== 'object') return [];
+    const rows = Object.values(data)
+      .filter(x => x && x.name && typeof x.score === 'number' && x.score > 0);
     rows.sort((a,b) => b.score - a.score);
     lcSave(rows);
     return rows;
   }catch(e){
     console.warn('lbFetch:', e.message);
-    return lcLoad();
+    return null;
   }
 }
 
 // ── push one score to Firebase ──
 async function lbPush(name, sc, lv, win){
+  if(!sc || sc <= 0) { const r = await lbFetch(); return r || lcLoad(); }
   const entry = {
     name  : (name||'').trim().slice(0,20) || 'ანონიმი',
     score : sc,
@@ -2246,24 +2255,85 @@ async function lbPush(name, sc, lv, win){
     win   : !!win,
     ts    : Date.now()
   };
-  // keep local copy first (works even offline)
-  const local = lcLoad();
-  local.push(entry);
-  local.sort((a,b)=>b.score-a.score);
-  lcSave(local);
-  // push to Firebase
+  // Push to Firebase first; only update local cache when push succeeds
+  let pushOk = false;
   try{
     const res = await fetch(LB_PATH + '.json', {
       method  : 'POST',
-      mode    : 'cors',
       headers : {'Content-Type':'application/json'},
       body    : JSON.stringify(entry)
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
+    pushOk = true;
   }catch(e){
     console.warn('lbPush:', e.message);
   }
-  return lbFetch();
+  if(pushOk){
+    const rows = await lbFetch();
+    return rows !== null ? rows : lcLoad();
+  }
+  // Offline fallback: add to local cache, deduplicate by ts
+  const local = lcLoad().filter(r => r && r.ts !== entry.ts);
+  local.push(entry);
+  local.sort((a,b) => b.score - a.score);
+  lcSave(local);
+  return local;
+}
+
+// ── helper: always returns the hardcoded DB URL ──
+function getDbUrl(){
+  return FB_URL;
+}
+
+// ── render leaderboard rows into #lb-list ──
+function lbRender(rows, highlightName){
+  const list = document.getElementById('lb-list');
+  if(!list) return;
+  list.innerHTML = '';
+
+  // Normalise: filter out broken entries
+  const safe = (Array.isArray(rows) ? rows : [])
+    .filter(function(r){ return r && typeof r === 'object' && r.name && typeof r.score === 'number'; });
+
+  if(safe.length === 0){
+    list.innerHTML = '<div style="text-align:center;color:#5a4018;font-size:13px;padding:24px 0;letter-spacing:1px;">ჩანაწერი ჯერ არ არის</div>';
+    return;
+  }
+
+  // Sort descending by score
+  safe.sort(function(a,b){ return b.score - a.score; });
+
+  safe.slice(0, 50).forEach(function(r, i){
+    const rank = i + 1;
+    const row  = document.createElement('div');
+    let cls = 'lb-row';
+    if(rank === 1) cls += ' top1';
+    else if(rank === 2) cls += ' top2';
+    else if(rank === 3) cls += ' top3';
+    if(highlightName && r.name === highlightName) cls += ' mine';
+    row.className = cls;
+
+    let rankHtml = '<span class="lb-rank">' + rank + '</span>';
+    if(rank === 1) rankHtml = '<span class="lb-rank gold">🥇</span>';
+    else if(rank === 2) rankHtml = '<span class="lb-rank silver">🥈</span>';
+    else if(rank === 3) rankHtml = '<span class="lb-rank bronze">🥉</span>';
+
+    const winBadge = r.win ? ' <span style="font-size:9px;color:#c89820;">⛪</span>' : '';
+    const lvlBadge = r.level ? '<span class="lb-lvl">Lv' + r.level + '</span>' : '';
+
+    row.innerHTML =
+      rankHtml +
+      '<span class="lb-name-col">' + escHtml(r.name) + winBadge + '</span>' +
+      '<span class="lb-score-col">' + Number(r.score).toLocaleString() + '</span>' +
+      lvlBadge;
+
+    list.appendChild(row);
+  });
+}
+
+// ── safe HTML escape ──
+function escHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── auto-save after game ends ──
@@ -2277,24 +2347,49 @@ async function lbShow(){
   setTimeout(()=>nameEl.focus(),120);
 
   document.getElementById('lb-status').textContent='⏳ იტვირთება...';
+
+  // Show cached rows immediately while fetching
   const cached=lcLoad();
-  if(cached.length)lbRender(cached,null);
+  try{ lbRender(cached,null); }catch(e){}
+
+  // Timeout fallback — if fetch hangs >8s, show cached/empty
+  let settled = false;
+  const fallbackTimer = setTimeout(()=>{
+    if(settled) return;
+    settled = true;
+    try{ lbRender(lcLoad(),null); }catch(e){}
+    document.getElementById('lb-status').textContent='⚠ ვერ ჩაიტვირთა';
+  }, 8000);
+
   try{
     const rows=await lbFetch();
-    lbRender(rows,null);
-    document.getElementById('lb-status').textContent=
-      rows.length?`🌐 ${rows.length} მოთამაშე`:'🌐 ცარიელი';
+    settled = true;
+    clearTimeout(fallbackTimer);
+    if(rows !== null){
+      try{ lbRender(rows,null); }catch(e){ console.warn('lbRender error',e); }
+      document.getElementById('lb-status').textContent=
+        rows.length?`🌐 ${rows.length} მოთამაშე`:'🌐 ჩანაწერი ჯერ არ არის';
+    } else {
+      // Firebase unreachable — show local cache
+      const local=lcLoad();
+      try{ lbRender(local,null); }catch(err){}
+      document.getElementById('lb-status').textContent=
+        local.length?`📱 ${local.length} (offline)`:'📱 ჩანაწერი ჯერ არ არის';
+    }
   }catch(e){
+    settled = true;
+    clearTimeout(fallbackTimer);
     const local=lcLoad();
-    lbRender(local,null);
+    try{ lbRender(local,null); }catch(err){}
     document.getElementById('lb-status').textContent=
-      local.length?`📱 ${local.length} (offline)`:'📱 ცარიელი';
+      local.length?`📱 ${local.length} (offline)`:'📱 ჩანაწერი ჯერ არ არის';
   }
 }
 
 function lbSetupSave(){} // disabled - URL hardcoded
 
 async function autoSaveScore(sc,lv,win){
+  if(!sc || sc <= 0) return;  // skip zero scores
   const name = localStorage.getItem('pirali_player_name') || 'ანონიმი';
   try{ await lbPush(name, sc, lv, win); }catch(e){}
 }
@@ -2306,10 +2401,8 @@ async function lbSave(){
   document.getElementById('lb-status').textContent='⏳ ინახება...';
   const rows=await lbPush(name,_pendingScore,_pendingLevel,_pendingWin);
   lbRender(rows,name);
-  const url=getDbUrl();
-  document.getElementById('lb-status').textContent=url?
-    `🌐 ${rows.length} მოთამაშე • ✅ შენახულია`:
-    `📱 ლოკალურად შენახულია`;
+  document.getElementById('lb-status').textContent=
+    rows.length ? `🌐 ${rows.length} მოთამაშე • ✅ შენახულია` : `✅ შენახულია`;
 }
 
 function lbPlay(){
