@@ -2262,32 +2262,6 @@ async function lbPush(name, sc, lv, win){
 }
 
 // ── auto-save after game ends ──
-async function autoSaveScore(sc, lv, win){
-  const name = localStorage.getItem('pirali_player_name') || 'ანონიმი';
-  try{ await lbPush(name, sc, lv, win); }catch(e){}
-}
-
-
-function lbRender(rows,myName){
-  const medals=['🥇','🥈','🥉'];
-  const rankClass=['top1','top2','top3'];
-  const list=document.getElementById('lb-list');
-  if(!list) return;
-  if(!rows||!rows.length){
-    list.innerHTML='<div style="text-align:center;color:#5a3c14;padding:16px;font-size:12px;">ჩანაწერები არ არის</div>';
-    return;
-  }
-  list.innerHTML=rows.slice(0,15).map((r,i)=>{
-    const isMine=myName&&r.name===myName&&r.score===_pendingScore;
-    return`<div class="lb-row ${i<3?rankClass[i]:''} ${isMine?'mine':''}">
-      <span class="lb-rank ${['gold','silver','bronze'][i]||''}">${medals[i]||'#'+(i+1)}</span>
-      <span class="lb-name-col">${escHtml(r.name)} ${r.win?'⛪':''}</span>
-      <span class="lb-score-col">${Number(r.score).toLocaleString()}</span>
-      <span class="lb-lvl">ტ${r.level||1}</span>
-    </div>`;
-  }).join('');
-}
-function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 async function lbShow(){
   document.getElementById('lb-play').style.display='block';bgmFadeIn(0.28);
@@ -2340,7 +2314,7 @@ function showGameOver(){
   document.getElementById('pause-overlay').style.display='none';
   document.getElementById('btn-pause').textContent='⏸';
   setTimeout(()=>bgmFadeIn(0.38),800);
-  _pendingScore=score;_pendingLevel=level;_pendingWin=false;autoSaveScore(score,level,false);
+  _pendingScore=score;_pendingLevel=level;_pendingWin=false;
   const s=document.getElementById('screen');
   s.className='gameover-screen';
   s.innerHTML=`<div id="screen-overlay"></div>
@@ -2356,7 +2330,7 @@ function showVictory(){
   document.getElementById('pause-overlay').style.display='none';
   document.getElementById('btn-pause').textContent='⏸';
   setTimeout(()=>bgmFadeIn(0.42),800);
-  _pendingScore=score;_pendingLevel=level;_pendingWin=true;autoSaveScore(score,level,true);
+  _pendingScore=score;_pendingLevel=level;_pendingWin=true;
   const s=document.getElementById('screen');
   s.className='victory-screen';
   s.innerHTML=`<div id="screen-overlay"></div>
