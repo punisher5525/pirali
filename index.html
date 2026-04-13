@@ -216,7 +216,7 @@ canvas{display:block;position:fixed;top:0;left:0;}
   <div id="lb-sub">საუკეთესო მოთამაშეები</div>
   <div id="lb-status" style="font-size:10px;color:#6a8a3a;letter-spacing:1px;margin-bottom:8px;z-index:1;min-height:14px;text-align:center;"></div>
   <div id="lb-setup-row" style="display:none!important;"></div>
-  <div id="lb-name-row">
+  <div id="lb-name-row" style="display:none;">
     <input id="lb-name" type="text" maxlength="14" placeholder="შეიყვანე სახელი..." autocomplete="off" spellcheck="false"/>
     <button id="lb-save" onclick="lbSave()">შენახვა</button>
   </div>
@@ -2218,8 +2218,12 @@ function lcSave(rows){
 // ── fetch top scores from Firebase ──
 async function lbFetch(){
   try{
-    // orderBy requires .indexOn rule in Firebase — fallback: fetch all & sort client-side
-    const res = await fetch(LB_PATH + '.json', { cache: 'no-store' });
+    const res = await fetch(LB_PATH + '.json', {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      headers: {'Accept': 'application/json'}
+    });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if(!data) return lcLoad();
@@ -2251,6 +2255,7 @@ async function lbPush(name, sc, lv, win){
   try{
     const res = await fetch(LB_PATH + '.json', {
       method  : 'POST',
+      mode    : 'cors',
       headers : {'Content-Type':'application/json'},
       body    : JSON.stringify(entry)
     });
@@ -2267,27 +2272,31 @@ async function lbShow(){
   document.getElementById('lb-play').style.display='block';bgmFadeIn(0.28);
   const nameEl=document.getElementById('lb-name');
   nameEl.value=localStorage.getItem('pirali_player_name')||'';
-  document.getElementById('lb-name-row').style.display='flex';
+  document.getElementById('lb-name-row').style.display='none';
   document.getElementById('lb-overlay').style.display='flex';
   setTimeout(()=>nameEl.focus(),120);
 
   document.getElementById('lb-status').textContent='⏳ იტვირთება...';
   const cached=lcLoad();
   if(cached.length)lbRender(cached,null);
-  const rows=await lbFetch();
-  lbRender(rows,null);
-  document.getElementById('lb-status').textContent=
-    rows.length?`🌐 ${rows.length} მოთამაშე`:'🌐 ცარიელი';
+  try{
+    const rows=await lbFetch();
+    lbRender(rows,null);
+    document.getElementById('lb-status').textContent=
+      rows.length?`🌐 ${rows.length} მოთამაშე`:'🌐 ცარიელი';
+  }catch(e){
+    const local=lcLoad();
+    lbRender(local,null);
+    document.getElementById('lb-status').textContent=
+      local.length?`📱 ${local.length} (offline)`:'📱 ცარიელი';
+  }
 }
 
 function lbSetupSave(){} // disabled - URL hardcoded
 
 async function autoSaveScore(sc,lv,win){
   const name = localStorage.getItem('pirali_player_name') || 'ანონიმი';
-  try{
-    await lbPush(name, sc, lv, win);
-    console.log('Score saved:', name, sc);
-  }catch(e){ console.warn('autosave failed', e); }
+  try{ await lbPush(name, sc, lv, win); }catch(e){}
 }
 
 async function lbSave(){
@@ -2314,7 +2323,7 @@ function showGameOver(){
   document.getElementById('pause-overlay').style.display='none';
   document.getElementById('btn-pause').textContent='⏸';
   setTimeout(()=>bgmFadeIn(0.38),800);
-  _pendingScore=score;_pendingLevel=level;_pendingWin=false;
+  _pendingScore=score;_pendingLevel=level;_pendingWin=false;autoSaveScore(score,level,false);
   const s=document.getElementById('screen');
   s.className='gameover-screen';
   s.innerHTML=`<div id="screen-overlay"></div>
@@ -2330,7 +2339,7 @@ function showVictory(){
   document.getElementById('pause-overlay').style.display='none';
   document.getElementById('btn-pause').textContent='⏸';
   setTimeout(()=>bgmFadeIn(0.42),800);
-  _pendingScore=score;_pendingLevel=level;_pendingWin=true;
+  _pendingScore=score;_pendingLevel=level;_pendingWin=true;autoSaveScore(score,level,true);
   const s=document.getElementById('screen');
   s.className='victory-screen';
   s.innerHTML=`<div id="screen-overlay"></div>
