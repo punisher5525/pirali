@@ -1,1 +1,45 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Game Admin Panel</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="panel">
+    <h2>Game Admin Panel</h2>
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('background')">Background</div>
+      <div class="tab" onclick="showTab('appearance')">Appearance</div>
+      <div class="tab" onclick="showTab('audio')">Audio</div>
+    </div>
+
+    <!-- Background Settings -->
+    <div id="background" class="tab-content active">
+      <label for="menuBackground">Menu Background URL:</label><br>
+      <input type="text" id="menuBackground" placeholder="Enter image URL"><br><br>
+      <button onclick="applyBackground()">Apply Background</button>
+      <div class="preview" id="preview">Menu Preview</div>
+    </div>
+
+    <!-- Appearance Settings -->
+    <div id="appearance" class="tab-content">
+      <label for="titleColor">Game Title Color:</label><br>
+      <input type="color" id="titleColor" value="#000000"><br><br>
+      <button onclick="applyAppearance()">Apply Appearance</button>
+    </div>
+
+    <!-- Audio Settings -->
+    <div id="audio" class="tab-content">
+      <label for="bgMusic">Background Music URL:</label><br>
+      <input type="text" id="bgMusic" placeholder="Enter audio URL"><br><br>
+      <button onclick="applyAudio()">Apply Audio</button>
+      <audio id="audioPreview" controls style="margin-top:10px;"></audio>
+    </div>
+  </div>
+
+  <!-- External JS -->
+  <script src="js/script.js"></script>
+</body>
+</html>
